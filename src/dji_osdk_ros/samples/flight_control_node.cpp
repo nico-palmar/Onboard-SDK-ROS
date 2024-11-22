@@ -369,7 +369,7 @@ void velocityAndYawRateCtrl(const JoystickCommand &offsetDesired, uint32_t timeM
   joystickMode.request.horizontal_mode = joystickMode.request.HORIZONTAL_VELOCITY;
   joystickMode.request.vertical_mode = joystickMode.request.VERTICAL_VELOCITY;
   joystickMode.request.yaw_mode = joystickMode.request.YAW_RATE;
-  joystickMode.request.horizontal_coordinate = joystickMode.request.HORIZONTAL_BODY;
+  joystickMode.request.horizontal_coordinate = joystickMode.request.HORIZONTAL_GROUND;
   joystickMode.request.stable_mode = joystickMode.request.STABLE_ENABLE;
   set_joystick_mode_client.call(joystickMode);
 

@@ -1,12 +1,13 @@
 #include <ros/ros.h>
+#include <string>
 #include <actionlib/server/simple_action_server.h>
 #include <dji_osdk_ros/AltitudeControlAction.h>
-// #include <std_msgs/Float32.h>  // For publishing altitude
 #include <dji_osdk_ros/common_type.h>
-#include <dji_osdk_ros/FlightTaskControl.h>
-#include <dji_osdk_ros/ObtainControlAuthority.h>
+#include<dji_osdk_ros/SetJoystickMode.h>
+#include<dji_osdk_ros/JoystickAction.h>
 #include <sensor_msgs/NavSatFix.h>
 
+namespace osdk = dji_osdk_ros;
 
 class AltitudeControlActionServer
 {
@@ -16,31 +17,59 @@ public:
       action_name_(name)
   {
       //register the goal and feeback callbacks
-      as_.registerGoalCallback(boost::bind(&AveragingAction::goalCB, this));
-      as_.registerPreemptCallback(boost::bind(&AveragingAction::preemptCB, this));
+      as_.registerGoalCallback(boost::bind(&AltitudeControlActionServer::goalCB, this));
+      as_.registerPreemptCallback(boost::bind(&AltitudeControlActionServer::preemptCB, this));
 
-      set_joystick_mode_client_ = nh.serviceClient<osdk::SetJoystickMode>("set_joystick_mode");
-      joystick_action_client_   = nh.serviceClient<osdk::JoystickAction>("joystick_action");
-      obtain_ctrl_authority_client_ = nh.serviceClient<osdk::ObtainControlAuthority>("obtain_release_control_authority");
+      set_joystick_mode_client_ = nh_.serviceClient<osdk::SetJoystickMode>("set_joystick_mode");
+      joystick_action_client_   = nh_.serviceClient<osdk::JoystickAction>("joystick_action");
       
       // subscribe to the position in order to run the action
-      gps_sub_ = nh_.subscribe<sensor_msgs::NavSatFix>("dji_osdk_ros/gps_position", 10, &AltitudeControlActionServer::gpsPosCallback);
+      gps_sub_ = nh_.subscribe("dji_osdk_ros/gps_position", 10, &AltitudeControlActionServer::gpsPosCallback, this);
+      // create a timer which is one shot and will not start by default
+      altitude_mission_timeout_ = nh_.createTimer(ros::Duration(1.0), &AltitudeControlActionServer::missionOutOfTime, this, true, false);
       as_.start();
   }
 
-    ~AltitudeControlActionServer(void) {}
+  ~AltitudeControlActionServer(void) {}
 
   void goalCB()
   {
-    // accept the new goal
-    goal_ = as_.acceptNewGoal()->target_relative_altitude;
+    const auto goal_ptr = as_.acceptNewGoal();
+    if (goal_ptr != nullptr)
+    {
+      altitude_mission_timeout_.setPeriod(ros::Duration(goal_ptr->mission_timeout));
+      altitude_mission_timeout_.start();
+      // set a flag to update the starting position
+      start_pos_.update = true;
+      // accept the new goal
+      goal_altitude_ = goal_ptr->target_relative_altitude;
+    }
+    else
+    {
+      throw std::runtime_error("The goal pointer was null!");
+    }
   }
 
   void preemptCB()
   {
     ROS_INFO("%s: Preempted", action_name_.c_str());
-    // set the action state to preempted
+    // stop the drone
+    osdk::JoystickCommand vel_command { 0, 0, 0, 0 };
+    velocityControl(vel_command);
     as_.setPreempted();
+  }
+
+  void missionOutOfTime(const ros::TimerEvent&)
+  {
+    // timer has elapsed, abort the mission
+    result_.success = false;
+    result_.message = "The altitude goal has timed out!";
+    ROS_WARN("The altitude goal timed out!");
+    // stop the drone
+    osdk::JoystickCommand vel_command { 0, 0, 0, 0};
+    velocityControl(vel_command);
+
+    as_.setAborted(result_);
   }
 
   // Goal Callback method
@@ -49,60 +78,96 @@ public:
     if (!as_.isActive())
       return;
 
+    if (start_pos_.update)
+    {
+      // set the start position if not yet set
+      start_pos_.pos = *msg;
+      start_pos_.update = false;
+    }
     curr_pos_ = *msg;
-    
-    // check if the message is too old, abort if this is the case
 
-    // run the control loop in this function
+    // run the control loop
+    // calculate the current altitude rise
+    const float current_altitude = curr_pos_.altitude - start_pos_.pos.altitude;
 
+    // calculate the error
+    const float altitude_error = goal_altitude_ - current_altitude;
+
+    // calculate the velocity required and cap it at the saturation
+    auto velocity_up = Kp * altitude_error;
+    velocity_up = std::abs(velocity_up) > std::abs(vel_saturation) ? vel_saturation: velocity_up;
+
+    // calculate the totoal percent risen
+    feedback_.altitude_rise_pct = current_altitude / goal_altitude_;
     as_.publishFeedback(feedback_);
 
-    // check if the goal should be aborted or has succeeded
-    // sample code
-    if(data_count_ > goal_) 
-    {
-      result_.mean = feedback_.mean;
-      result_.std_dev = feedback_.std_dev;
+    // control the drone to go up
+    osdk::JoystickCommand vel_command { 0, 0, velocity_up, 0};
+    velocityControl(vel_command);
 
-      if(result_.mean < 5.0)
-      {
-        ROS_INFO("%s: Aborted", action_name_.c_str());
-        //set the action state to aborted
-        as_.setAborted(result_);
-      }
-      else 
-      {
-        ROS_INFO("%s: Succeeded", action_name_.c_str());
-        // set the action state to succeeded
-        as_.setSucceeded(result_);
-      }
+    // check if the goal has succeeded
+    if(current_altitude >= (goal_altitude_ - 1e-2))
+    {
+      // stop the drone
+      osdk::JoystickCommand vel_command { 0, 0, 0, 0 };
+      velocityControl(vel_command);
+      result_.success = true;
+      result_.message = "Success, reached target relative altitude of " + std::to_string(goal_altitude_) + " meters";
+
+      ROS_INFO_STREAM(action_name_.c_str() << " Succeeded");
+      as_.setSucceeded(result_);
     }
   }
 
 private:
+
+  void velocityControl(const osdk::JoystickCommand &command)
+  {
+    osdk::SetJoystickMode joystickMode;
+    osdk::JoystickAction joystickAction;
+    joystickMode.request.horizontal_mode = joystickMode.request.HORIZONTAL_VELOCITY;
+    joystickMode.request.vertical_mode = joystickMode.request.VERTICAL_VELOCITY;
+    joystickMode.request.yaw_mode = joystickMode.request.YAW_RATE;
+    joystickMode.request.horizontal_coordinate = joystickMode.request.HORIZONTAL_GROUND;
+    joystickMode.request.stable_mode = joystickMode.request.STABLE_ENABLE;
+    set_joystick_mode_client_.call(joystickMode);
+
+    joystickAction.request.joystickCommand.x = command.x;
+    joystickAction.request.joystickCommand.y = command.y;
+    joystickAction.request.joystickCommand.z = command.z;
+    joystickAction.request.joystickCommand.yaw = command.yaw;
+    joystick_action_client_.call(joystickAction);
+  }
+
   ros::NodeHandle nh_;
-  actionlib::SimpleActionServer<your_package::ControlAltitudeAction> as_;
+  actionlib::SimpleActionServer<osdk::AltitudeControlAction> as_;
   std::string action_name_;
-  // TODO: consider making goal and feedback float by default
-  osdk::AltitudeControlGoal goal_; 
+  float goal_altitude_;
   osdk::AltitudeControlResult result_;
   osdk::AltitudeControlFeedback feedback_;
 
+  struct GPSWithUpdate
+  {
+    bool update { true };
+    sensor_msgs::NavSatFix pos;
+  };
+
   // store data needed for feedback control
-  // TODO: consider setting an initial value for current pos
   sensor_msgs::NavSatFix curr_pos_;
+  GPSWithUpdate start_pos_;
 
   // gain for the proportional controller
-  const int Kp { 0.1 };
+  const float Kp { 0.9 };
 
   // velocity saturation [m/s]
   const int vel_saturation { 10 };
+
+  // timeout for mission
+  ros::Timer altitude_mission_timeout_;
   
   // clients to control drone's motion
   ros::ServiceClient set_joystick_mode_client_;
   ros::ServiceClient joystick_action_client_;
-  // client to obtain control via OSDK
-  ros::ServiceClient obtain_ctrl_authority_client_ ;
   ros::Subscriber gps_sub_;
 };
 
