@@ -300,19 +300,19 @@ int main(int argc, char** argv)
           ROS_INFO_STREAM("Takeoff task successful");
           ros::Duration(2).sleep();
 
-          velocityAndYawRateCtrl( {0, 0, 5.0, 0}, 2000);
+          velocityAndYawRateCtrl( {0, 0, 1.0, 0}, 1000);
           ROS_INFO_STREAM("Step 1 over!EmergencyBrake for 2s\n");
           emergency_brake_client.call(emergency_brake);
           ros::Duration(2).sleep();
-          velocityAndYawRateCtrl({-1.5, 2, 0, 0}, 2000);
+          velocityAndYawRateCtrl({0, 3.0, 0, 0}, 2000);
           ROS_INFO_STREAM("Step 2 over!EmergencyBrake for 2s\n");
           emergency_brake_client.call(emergency_brake);
           ros::Duration(2).sleep();
-          velocityAndYawRateCtrl({3, 0, 0, 0}, 2500);
+          velocityAndYawRateCtrl({3.0, 0, 0, 0}, 2500);
           ROS_INFO_STREAM("Step 3 over!EmergencyBrake for 2s\n");
           emergency_brake_client.call(emergency_brake);
           ros::Duration(2).sleep();
-          velocityAndYawRateCtrl({-1.6, -2, 0, 0}, 2200);
+          velocityAndYawRateCtrl({3.0, 3.0, 0, 0}, 2200);
           ROS_INFO_STREAM("Step 4 over!EmergencyBrake for 2s\n");
           emergency_brake_client.call(emergency_brake);
           ros::Duration(2).sleep();
@@ -369,7 +369,7 @@ void velocityAndYawRateCtrl(const JoystickCommand &offsetDesired, uint32_t timeM
   joystickMode.request.horizontal_mode = joystickMode.request.HORIZONTAL_VELOCITY;
   joystickMode.request.vertical_mode = joystickMode.request.VERTICAL_VELOCITY;
   joystickMode.request.yaw_mode = joystickMode.request.YAW_RATE;
-  joystickMode.request.horizontal_coordinate = joystickMode.request.HORIZONTAL_GROUND;
+  joystickMode.request.horizontal_coordinate = joystickMode.request.HORIZONTAL_BODY;
   joystickMode.request.stable_mode = joystickMode.request.STABLE_ENABLE;
   set_joystick_mode_client.call(joystickMode);
 
