@@ -6,6 +6,8 @@
 #include<dji_osdk_ros/SetJoystickMode.h>
 #include<dji_osdk_ros/JoystickAction.h>
 #include <sensor_msgs/NavSatFix.h>
+#include <geometry_msgs/Vector3Stamped.h>
+#include <cmath>
 
 namespace osdk = dji_osdk_ros;
 
@@ -25,6 +27,9 @@ public:
       
       // subscribe to the position in order to run the action
       gps_sub_ = nh_.subscribe("dji_osdk_ros/gps_position", 10, &AltitudeControlActionServer::gpsPosCallback, this);
+
+      vel_sub_ = nh_.subscribe("dji_osdk_ros/velocity", 10, &AltitudeControlActionServer::measuredVelocityCallback, this);
+
       // create a timer which is one shot and will not start by default
       altitude_mission_timeout_ = nh_.createTimer(ros::Duration(1.0), &AltitudeControlActionServer::missionOutOfTime, this, true, false);
       as_.start();
@@ -56,11 +61,15 @@ public:
     // stop the drone
     osdk::JoystickCommand vel_command { 0, 0, 0, 0 };
     velocityControl(vel_command);
+    altitude_mission_timeout_.stop();
     as_.setPreempted();
   }
 
   void missionOutOfTime(const ros::TimerEvent&)
   {
+    if (!as_.isActive())
+      return;
+
     // timer has elapsed, abort the mission
     result_.success = false;
     result_.message = "The altitude goal has timed out!";
@@ -70,6 +79,41 @@ public:
     velocityControl(vel_command);
 
     as_.setAborted(result_);
+  }
+
+  float saturateSpeed(const float& speed)
+  {
+    float ret = speed;
+    if (std::abs(speed) > std::abs(speed_saturation_))
+    {
+      if (speed > 0)
+      {
+        ret = speed_saturation_;
+      }
+      else
+      {
+        ret = -speed_saturation_;
+      }
+    }
+    return ret;
+  }
+
+  void measuredVelocityCallback(const geometry_msgs::Vector3Stamped::ConstPtr& msg)
+  {
+    measured_speed_.x = msg->vector.x;
+    measured_speed_.y = msg->vector.y;
+    measured_speed_.z = msg->vector.z;
+  }
+
+  bool isGoalComplete(const float& altitude)
+  {
+    // check that the altitude is within some bounds of the goal
+    // and that the current speed is low enough
+    const auto altitude_bound { 1e-2 };
+    const auto speed_bound { 1e-2 };
+    const auto within_altitude_bound = std::abs(std::abs(altitude) - std::abs(goal_altitude_)) <= altitude_bound;
+    const auto within_speed_bound = std::abs(measured_speed_.z) <= speed_bound;
+    return within_altitude_bound && within_speed_bound;
   }
 
   // Goal Callback method
@@ -94,20 +138,23 @@ public:
     const float altitude_error = goal_altitude_ - current_altitude;
 
     // calculate the velocity required and cap it at the saturation
-    auto velocity_up = Kp * altitude_error;
-    velocity_up = std::abs(velocity_up) > std::abs(vel_saturation) ? vel_saturation: velocity_up;
+    auto speed = Kp * altitude_error;
+    speed = saturateSpeed(speed);
 
     // calculate the totoal percent risen
     feedback_.altitude_rise_pct = current_altitude / goal_altitude_;
     as_.publishFeedback(feedback_);
 
-    // control the drone to go up
-    osdk::JoystickCommand vel_command { 0, 0, velocity_up, 0};
+    // control the drone z component (up or down)
+    osdk::JoystickCommand vel_command { 0, 0, speed, 0};
     velocityControl(vel_command);
 
     // check if the goal has succeeded
-    if(current_altitude >= (goal_altitude_ - 1e-2))
+    if(isGoalComplete(current_altitude))
     {
+      // stop the timer
+      altitude_mission_timeout_.stop();
+
       // stop the drone
       osdk::JoystickCommand vel_command { 0, 0, 0, 0 };
       velocityControl(vel_command);
@@ -160,7 +207,9 @@ private:
   const float Kp { 0.9 };
 
   // velocity saturation [m/s]
-  const int vel_saturation { 10 };
+  const int speed_saturation_ { 10 };
+
+  geometry_msgs::Vector3 measured_speed_;
 
   // timeout for mission
   ros::Timer altitude_mission_timeout_;
@@ -169,6 +218,7 @@ private:
   ros::ServiceClient set_joystick_mode_client_;
   ros::ServiceClient joystick_action_client_;
   ros::Subscriber gps_sub_;
+  ros::Subscriber vel_sub_;
 };
 
 int main(int argc, char** argv)

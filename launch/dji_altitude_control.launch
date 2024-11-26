@@ -1,0 +1,5 @@
+<launch>
+    <include file="$(find dji_osdk_ros)/launch/dji_vehicle_node.launch" />
+
+    <node pkg="dji_osdk_ros" type="altitude_control_node" name="altitude_control"/>
+</launch>
