@@ -3,8 +3,8 @@
 #include <actionlib/server/simple_action_server.h>
 #include <dji_osdk_ros/AltitudeControlAction.h>
 #include <dji_osdk_ros/common_type.h>
-#include<dji_osdk_ros/SetJoystickMode.h>
-#include<dji_osdk_ros/JoystickAction.h>
+#include <dji_osdk_ros/SetJoystickMode.h>
+#include <dji_osdk_ros/JoystickAction.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <geometry_msgs/Vector3Stamped.h>
 #include <cmath>
@@ -36,6 +36,8 @@ public:
   }
 
   ~AltitudeControlActionServer(void) {}
+
+private:
 
   void goalCB()
   {
@@ -165,8 +167,6 @@ public:
       as_.setSucceeded(result_);
     }
   }
-
-private:
 
   void velocityControl(const osdk::JoystickCommand &command)
   {
