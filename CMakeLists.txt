@@ -15,6 +15,8 @@ find_package(catkin REQUIRED COMPONENTS
     std_msgs
     sensor_msgs
     message_filters # for message_filter
+    actionlib
+    actionlib_msgs
   )
 
 ## System dependencies are found with CMake's conventions
@@ -202,6 +204,11 @@ add_service_files(
 #   Action2.action
 # )
 
+add_action_files(
+  FILES
+  AltitudeControl.action
+)
+
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
    DEPENDENCIES
@@ -209,6 +216,7 @@ add_service_files(
    nav_msgs
    std_msgs  # Or other packages containing msgs
    sensor_msgs
+   actionlib_msgs
  )
 
 ################################################
@@ -250,6 +258,7 @@ catkin_package(
     nav_msgs
     std_msgs
     nmea_msgs
+    actionlib_msgs
 #  DEPENDS system_lib
 )
 

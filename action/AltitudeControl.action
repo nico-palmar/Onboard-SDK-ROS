@@ -1,0 +1,15 @@
+# ControlAltitude.action
+
+# Goal: Desired altitude (in meters) above current position
+float32 target_relative_altitude
+# how long the mission can be, in seconds
+float32 mission_timeout
+
+---
+# Result: Whether the altitude control was successful
+bool success
+string message
+
+---
+# Feedback: Current altitude as a percentage of the target altitude
+float32 altitude_rise_pct
