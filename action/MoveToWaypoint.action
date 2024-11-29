@@ -1,0 +1,13 @@
+# MoveToWaypoint.action
+
+# Goal, the desired waypoint to move to
+geographic_msgs/GeoPoint goal_position
+
+---
+# Result definition
+bool success
+string message
+
+---
+# Feedback: Euclidean distance to the goal
+float32 dist_to_goal

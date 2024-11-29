@@ -17,6 +17,8 @@ find_package(catkin REQUIRED COMPONENTS
     message_filters # for message_filter
     actionlib
     actionlib_msgs
+    geodesy
+    geographic_msgs
   )
 
 ## System dependencies are found with CMake's conventions
@@ -35,6 +37,7 @@ ENDIF()
 
 find_package(LibUSB REQUIRED)
 find_package(FFMPEG REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -207,6 +210,7 @@ add_service_files(
 add_action_files(
   FILES
   AltitudeControl.action
+  MoveToWaypoint.action
 )
 
 ## Generate added messages and services with any dependencies listed here
@@ -217,6 +221,7 @@ add_action_files(
    std_msgs  # Or other packages containing msgs
    sensor_msgs
    actionlib_msgs
+   geographic_msgs
  )
 
 ################################################
@@ -259,6 +264,8 @@ catkin_package(
     std_msgs
     nmea_msgs
     actionlib_msgs
+    geodesy
+    geographic_msgs
 #  DEPENDS system_lib
 )
 
@@ -273,6 +280,7 @@ include_directories(
  #${DJIOSDK_INCLUDE_DIRS}
  ${LIBUSB_1_INCLUDE_DIR}
  ${catkin_INCLUDE_DIRS}
+ ${EIGEN3_INCLUDE_DIR}
 )
 
 add_subdirectory(src)
