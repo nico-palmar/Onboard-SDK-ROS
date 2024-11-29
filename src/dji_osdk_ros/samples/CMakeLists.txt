@@ -32,6 +32,21 @@ target_link_libraries(altitude_control_node
         )
 add_dependencies(altitude_control_node dji_osdk_ros_generate_messages_cpp)
 
+add_executable(move_to_waypoint_node
+               move_to_waypoint.cpp)
+target_link_libraries(move_to_waypoint_node
+        ${PROJECT_NAME}
+        )
+add_dependencies(move_to_waypoint_node dji_osdk_ros_generate_messages_cpp)
+
+add_executable(mission_client_test_node
+               mission_client_test_node.cpp)
+target_link_libraries(mission_client_test_node
+        ${PROJECT_NAME}
+        )
+add_dependencies(mission_client_test_node dji_osdk_ros_generate_messages_cpp)
+
+
 add_executable(gimbal_camera_control_node
                gimbal_camera_control_node.cpp )
 target_link_libraries(gimbal_camera_control_node
